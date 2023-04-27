@@ -106,7 +106,8 @@ class ImageClassificationModelOutput(AbstractModelOutput):
                    weights: Iterable[Tensor],
                    buffers: Iterable[Tensor],
                    image: Tensor,
-                   label: Tensor) -> Tensor:
+                   label: Tensor,
+                   category: int) -> Tensor:
         """ For a given input :math:`z=(x, y)` and model parameters :math:`\\theta`,
         let :math:`p(z, \\theta)` be the softmax probability of the correct class.
         This method implements the model output function
@@ -137,6 +138,8 @@ class ImageClassificationModelOutput(AbstractModelOutput):
                 input image, should not have batch dimension
             label (Tensor):
                 input label, should not have batch dimension
+            category (int):
+                category of which to get output
 
         Returns:
             Tensor:
@@ -145,7 +148,9 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         """
         logits = func_model(weights, buffers, image.unsqueeze(0))
         bindex = ch.arange(logits.shape[0]).to(logits.device, non_blocking=False)
-        logits_correct = logits[bindex, label.unsqueeze(0)]
+        #category_tensor = category*ch.Tensor.new_ones(label.size()).to(logits.device, non_blocking=False)
+        logits_correct = logits_category = logits[bindex, label.unsqueeze(0)]
+        #logits_category = logits[bindex, category_tensor.unsqueeze(0)]
 
         cloned_logits = logits.clone()
         # a hacky way to remove the logits of the correct labels from the sum
@@ -153,6 +158,7 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         cloned_logits[bindex, label.unsqueeze(0)] = ch.tensor(-ch.inf).to(logits.device)
 
         margins = logits_correct - cloned_logits.logsumexp(dim=-1)
+        #probabilities_category = ch.softmax(logits_category, dim=-1)
         return margins.sum()
 
     def forward(self, model: Module, batch: Iterable[Tensor]) -> Tensor:
@@ -175,7 +181,7 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         images, _ = batch
         return model(images)
 
-    def get_out_to_loss_grad(self, func_model, weights, buffers, batch: Iterable[Tensor]) -> Tensor:
+    def get_out_to_loss_grad(self, func_model, weights, buffers, batch: Iterable[Tensor], category: int) -> Tensor:
         """ Computes the (reweighting term Q in the paper)
 
         Args:
@@ -194,10 +200,140 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         """
         images, labels = batch
         logits = func_model(weights, buffers, images)
+        category_tensor = category*ch.Tensor.new_ones(labels.size()).to(logits.device, non_blocking=False)
         # here we are directly implementing the gradient instead of relying on autodiff to do
         # that for us
-        ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), labels]
-        return (1 - ps).clone().detach().unsqueeze(-1)
+        ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), category_tensor]
+
+        grad = -(labels == category_tensor) + ps
+
+        
+        
+        return grad.clone().detach().unsqueeze(-1)
+
+class ImageClassificationModelOutputByCategory(AbstractModelOutput):
+    """ Margin for (multiclass) image classification. See Section 3.3 of `our
+    paper <https://arxiv.org/abs/2303.14186>`_ for more details.
+    """
+
+    def __init__(self, temperature: float = 1.) -> None:
+        """
+        Args:
+            temperature (float, optional): Temperature to use inside the
+            softmax for the out-to-loss function. Defaults to 1.
+        """
+        super().__init__()
+        self.softmax = ch.nn.Softmax(-1)
+        self.loss_temperature = temperature
+
+    @staticmethod
+    def get_output(func_model,
+                   weights: Iterable[Tensor],
+                   buffers: Iterable[Tensor],
+                   image: Tensor,
+                   label: Tensor,
+                   category: int) -> Tensor:
+        """ For a given input :math:`z=(x, y)` and model parameters :math:`\\theta`,
+        let :math:`p(z, \\theta)` be the softmax probability of the correct class.
+        This method implements the model output function
+
+        .. math::
+
+            \\log(\\frac{p(z, \\theta)}{1 - p(z, \\theta)}).
+
+        It uses functorch's functional models to make the per-sample gradient computations faster.
+        For more details on what func_model, weights & buffers are, and how to use them, please
+        refer to https://pytorch.org/functorch/stable/ and
+        https://pytorch.org/functorch/stable/notebooks/per_sample_grads.html.
+
+        Note: this method slightly breaks abstraction since it has a different
+        signature from the abstract :code:`get_output`. It's only used
+        internally by :func:`GradientComputer` so it shouldn't be a big problem.
+        If you're reading this and feel strongly about it, feel free to make a
+        PR with a fix.
+
+        Args:
+            func_model (func):
+                functorch functional model
+            weights (Iterable[Tensor]):
+                functorch model weights
+            buffers (Iterable[Tensor]):
+                functorch model buffers
+            image (Tensor):
+                input image, should not have batch dimension
+            label (Tensor):
+                input label, should not have batch dimension
+            category (int):
+                category of which to get output
+
+        Returns:
+            Tensor:
+                model output for the given image-label pair :math:`z` and
+                weights & buffers :math:`\\theta`.
+        """
+        logits = func_model(weights, buffers, image.unsqueeze(0))
+        bindex = ch.arange(logits.shape[0]).to(logits.device, non_blocking=False)
+        category_tensor = category*ch.Tensor.new_ones(label.size()).to(logits.device, non_blocking=False)
+        logits_category = logits[bindex, category_tensor.unsqueeze(0)]
+
+        cloned_logits = logits.clone()
+        # a hacky way to remove the logits of the correct labels from the sum
+        # in logsumexp by setting to -ch.inf
+        cloned_logits[bindex, label.unsqueeze(0)] = ch.tensor(-ch.inf).to(logits.device)
+
+        #margins = logits_correct - cloned_logits.logsumexp(dim=-1)
+        #probabilities_category = ch.softmax(logits_category, dim=-1)
+        return logits_category
+
+    def forward(self, model: Module, batch: Iterable[Tensor]) -> Tensor:
+        """ Utility method to make forward passes compatible across different models,
+        e.g. image classification models take in only the images in the batch,
+        but CLIP takes in both the images and captions --- using this method,
+        the TRAKer class does not need to be modified when we have a new model
+        that uses different parts of the input batch.
+
+        Args:
+            model (Module):
+                model
+            batch (Iterable[Tensor]):
+                input batch
+
+        Returns:
+            Tensor:
+                model output (not to be confused with the model output function)
+        """
+        images, _ = batch
+        return model(images)
+
+    def get_out_to_loss_grad(self, func_model, weights, buffers, batch: Iterable[Tensor], category: int) -> Tensor:
+        """ Computes the (reweighting term Q in the paper)
+
+        Args:
+            func_model (func):
+                functorch functional model
+            weights (Iterable[Tensor]):
+                functorch model weights
+            buffers (Iterable[Tensor]):
+                functorch model buffers
+            batch (Iterable[Tensor]):
+                input batch
+
+        Returns:
+            Tensor:
+                out-to-loss (reweighting term) for the input batch
+        """
+        images, labels = batch
+        logits = func_model(weights, buffers, images)
+        category_tensor = category*ch.Tensor.new_ones(labels.size()).to(logits.device, non_blocking=False)
+        # here we are directly implementing the gradient instead of relying on autodiff to do
+        # that for us
+        ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), category_tensor]
+
+        grad = -(labels == category_tensor) + ps
+
+        
+        
+        return grad.clone().detach().unsqueeze(-1)
 
 
 class IterImageClassificationModelOutput(AbstractModelOutput):
@@ -512,5 +648,6 @@ TASK_TO_MODELOUT = {
     ('image_classification', True): ImageClassificationModelOutput,
     ('image_classification', False): IterImageClassificationModelOutput,
     ('text_classification', True): TextClassificationModelOutput,
+    ('image_classification_cat', True): ImageClassificationModelOutputByCategory,
     ('clip', True): CLIPModelOutput,
 }
