@@ -324,7 +324,7 @@ class ImageClassificationModelOutputByCategory(AbstractModelOutput):
         """
         images, labels = batch
         logits = func_model(weights, buffers, images)
-        category_tensor = category*ch.Tensor.new_ones(labels.size()).to(logits.device, non_blocking=False)
+        category_tensor = category*ch.ones(labels.size()).to(logits.device, non_blocking=False)
         # here we are directly implementing the gradient instead of relying on autodiff to do
         # that for us
         ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), category_tensor]
