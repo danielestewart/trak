@@ -148,9 +148,7 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         """
         logits = func_model(weights, buffers, image.unsqueeze(0))
         bindex = ch.arange(logits.shape[0]).to(logits.device, non_blocking=False)
-        #category_tensor = category*ch.Tensor.new_ones(label.size()).to(logits.device, non_blocking=False)
-        logits_correct = logits_category = logits[bindex, label.unsqueeze(0)]
-        #logits_category = logits[bindex, category_tensor.unsqueeze(0)]
+        logits_correct = logits[bindex, label.unsqueeze(0)]
 
         cloned_logits = logits.clone()
         # a hacky way to remove the logits of the correct labels from the sum
@@ -158,7 +156,6 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         cloned_logits[bindex, label.unsqueeze(0)] = ch.tensor(-ch.inf).to(logits.device)
 
         margins = logits_correct - cloned_logits.logsumexp(dim=-1)
-        #probabilities_category = ch.softmax(logits_category, dim=-1)
         return margins.sum()
 
     def forward(self, model: Module, batch: Iterable[Tensor]) -> Tensor:
@@ -200,16 +197,10 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         """
         images, labels = batch
         logits = func_model(weights, buffers, images)
-        category_tensor = category*ch.Tensor.new_ones(labels.size()).to(logits.device, non_blocking=False)
         # here we are directly implementing the gradient instead of relying on autodiff to do
         # that for us
-        ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), category_tensor]
-
-        grad = -(labels == category_tensor) + ps
-
-        
-        
-        return grad.clone().detach().unsqueeze(-1)
+        ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), labels]
+        return (1 - ps).clone().detach().unsqueeze(-1)
 
 class ImageClassificationModelOutputByCategory(AbstractModelOutput):
     """ Margin for (multiclass) image classification. See Section 3.3 of `our
