@@ -106,8 +106,7 @@ class ImageClassificationModelOutput(AbstractModelOutput):
                    weights: Iterable[Tensor],
                    buffers: Iterable[Tensor],
                    image: Tensor,
-                   label: Tensor,
-                   category: int) -> Tensor:
+                   label: Tensor) -> Tensor:
         """ For a given input :math:`z=(x, y)` and model parameters :math:`\\theta`,
         let :math:`p(z, \\theta)` be the softmax probability of the correct class.
         This method implements the model output function
@@ -178,7 +177,7 @@ class ImageClassificationModelOutput(AbstractModelOutput):
         images, _ = batch
         return model(images)
 
-    def get_out_to_loss_grad(self, func_model, weights, buffers, batch: Iterable[Tensor], category: int = 0 ) -> Tensor:
+    def get_out_to_loss_grad(self, func_model, weights, buffers, batch: Iterable[Tensor]) -> Tensor:
         """ Computes the (reweighting term Q in the paper)
 
         Args:
