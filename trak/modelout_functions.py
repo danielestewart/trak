@@ -273,7 +273,7 @@ class ImageClassificationModelOutputByCategory(AbstractModelOutput):
 
         #margins = logits_correct - cloned_logits.logsumexp(dim=-1)
         #probabilities_category = ch.softmax(logits_category, dim=-1)
-        return logits_category
+        return logits_category.sum()
 
     def forward(self, model: Module, batch: Iterable[Tensor]) -> Tensor:
         """ Utility method to make forward passes compatible across different models,
