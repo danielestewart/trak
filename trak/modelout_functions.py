@@ -263,7 +263,7 @@ class ImageClassificationModelOutputByCategory(AbstractModelOutput):
         """
         logits = func_model(weights, buffers, image.unsqueeze(0))
         bindex = ch.arange(logits.shape[0]).to(logits.device, non_blocking=False)
-        category_tensor = category*ch.ones(label.size()).to(logits.device, non_blocking=False)
+        category_tensor = category*ch.ones(label.size(), dtype=int).to(logits.device, non_blocking=False)
         logits_category = logits[bindex, category_tensor.unsqueeze(0)]
 
         cloned_logits = logits.clone()
