@@ -319,7 +319,7 @@ class ImageClassificationModelOutputByCategory(AbstractModelOutput):
         # that for us
         ps = self.softmax(logits / self.loss_temperature)[ch.arange(logits.size(0)), category_tensor]
 
-        grad = -1*(labels == category_tensor) + ps
+        grad = (-2*ps + 1)*(labels == category_tensor) + ps
 
         
         
