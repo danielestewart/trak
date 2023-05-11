@@ -583,6 +583,15 @@ class CLIPModelOutput(AbstractModelOutput):
         ps = (self.softmax(res) + self.softmax(res.T)).diag() / 2.
         return (1 - ps).clone().detach()
 
+#Returns array arr + Lap(noise_arr/beta), where
+#Lap(noise_arr/beta) is sampled from the laplace distribution,
+#coordinate i has scale noise_arr_i/beta, centered at 0.
+def noise(arr: Tensor, noise_arr: Tensor, beta: float):
+    return arr + (ch.distributions.laplace.Laplace(ch.zeros(arr.size()), noise_arr/beta).sample())
+
+def get_infty_norm(arr: Tensor):
+    return ch.max(ch.abs(arr));
+
 
 class TextClassificationModelOutput(AbstractModelOutput):
     """ Margin for text classification models. This assumes that the model takes
