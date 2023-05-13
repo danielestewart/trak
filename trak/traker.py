@@ -34,6 +34,7 @@ class TRAKer():
                  saver: Optional[AbstractSaver] = None,
                  score_computer: Optional[AbstractScoreComputer] = None,
                  proj_dim: int = 2048,
+                 category: int = 0
                  ) -> None:
         """
 
@@ -95,6 +96,8 @@ class TRAKer():
 
         if type(self.task) is str:
             self.task = TASK_TO_MODELOUT[(self.task, gradient_computer.is_functional)]
+
+        self.task.category = category
 
         self.gradient_computer = gradient_computer(model=self.model,
                                                    modelout_fn=self.task,
