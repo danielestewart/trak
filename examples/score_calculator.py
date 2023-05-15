@@ -147,6 +147,8 @@ loader_train = get_dataloader(batch_size=batch_size, split='train')
 def l_inf_norm(arr):
     return max(np.fabs(arr))
 
+loader_targets = get_dataloader(batch_size=batch_size, split='val', augment=False)
+
 arr_of_scores = torch.empty((1,10), dtype = torch.float64)
 from trak.projectors import CudaProjector 
 from trak.projectors import ProjectionType
