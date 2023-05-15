@@ -180,7 +180,7 @@ for category in range(10):
     scores = traker.finalize_scores().cpu()
     arr_of_scores[0][category] = modelout_functions.get_infty_norm(scores)
 
-    torch.save(arr_of_scores, 'first' + category + 'categories.pt')
+    torch.save(arr_of_scores, 'first' + str(category) + 'categories.pt')
     
     
     
