@@ -181,10 +181,10 @@ for category in range(10):
 
     scores = traker.finalize_scores().cpu()
     
-    torch.save(scores, 'category' + category + 'scores.pt')
+    torch.save(scores, 'category' + str(category) + 'scores.pt')
     
     bias = torch.sum(scores)/scores.size(dim=0)
-    
+
     arr_of_scores[0][category] = modelout_functions.get_infty_norm(scores)
 
     torch.save(arr_of_scores, 'first' + str(category) + 'categories.pt')
